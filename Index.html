@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Patrimonio y Oficinas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body {
+      background-color: #f4f6f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .card {
+      border: none;
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    }
+    #reader {
+      width: 100%;
+      max-width: 440px;
+      margin: 0 auto;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .input-readonly {
+      background-color: #e9ecef !important;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body class="py-4">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        
+        <div class="card p-4 mb-4">
+          <h3 class="card-title text-center text-primary mb-2">Inventario Web de Equipos</h3>
+          <p class="text-muted text-center small mb-4">Escanee el código de barras en vivo o ingréselo manualmente.</p>
+          
+          <!-- Escáner en Vivo -->
+          <div class="mb-4 text-center">
+            <button type="button" id="btnToggleCam" class="btn btn-outline-primary mb-2" onclick="toggleCamera()">
+              📷 Activar Cámara en Vivo
+            </button>
+            <div id="reader" style="display: none;"></div>
+          </div>
+
+          <form id="formInventario" onsubmit="guardarRegistro(event)">
+            
+            <div class="row g-3">
+              <!-- Desplegable Oficina -->
+              <div class="col-12">
+                <label for="selectOficina" class="form-label fw-bold">Oficina / Área *</label>
+                <select class="form-select" id="selectOficina" required onchange="alCambiarOficina()">
+                  <option value="" selected disabled>Cargando lista de oficinas...</option>
+                </select>
+              </div>
+
+              <!-- Datos Autocompletados -->
+              <div class="col-md-5">
+                <label for="responsable" class="form-label text-muted small fw-bold">Responsable</label>
+                <input type="text" class="form-control input-readonly" id="responsable" readonly placeholder="Se autocompleta">
+              </div>
+
+              <div class="col-md-5">
+                <label for="correo" class="form-label text-muted small fw-bold">Correo Institucional</label>
+                <input type="email" class="form-control input-readonly" id="correo" readonly placeholder="Se autocompleta">
+              </div>
+
+              <div class="col-md-2">
+                <label for="anexo" class="form-label text-muted small fw-bold">Anexo</label>
+                <input type="text" class="form-control input-readonly" id="anexo" readonly placeholder="---">
+              </div>
+
+              <hr class="my-3">
+
+              <!-- Código de Patrimonio -->
+              <div class="col-md-6">
+                <label for="patrimonio" class="form-label fw-bold">Código de Patrimonio (ID) *</label>
+                <input type="text" class="form-control" id="patrimonio" required placeholder="Ej. 74089900012">
+              </div>
+
+              <!-- Descripción -->
+              <div class="col-md-6">
+                <label for="descripcion" class="form-label fw-bold">Descripción del Equipo *</label>
+                <input type="text" class="form-control" id="descripcion" required placeholder="Ej. CPU HP EliteDesk Core i7, 16GB">
+              </div>
+
+              <!-- Ubicación / Referencia -->
+              <div class="col-12">
+                <label for="ubicacion" class="form-label fw-bold">Ubicación / Detalle en Oficina</label>
+                <input type="text" class="form-control" id="ubicacion" placeholder="Ej. Escritorio 1, al lado del switch">
+              </div>
+            </div>
+
+            <!-- Banner Alerta -->
+            <div id="alerta" class="alert mt-4 d-none" role="alert"></div>
+
+            <!-- Botón Submit -->
+            <div class="mt-4 d-grid">
+              <button type="submit" id="btnSubmit" class="btn btn-primary btn-lg">Registrar Equipo</button>
+            </div>
+
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // PEGA AQUÍ LA URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT (/exec)
+    // =========================================================================
+    const SCRIPT_URL = 'https://script.google.com/macros/s/TU_ID_DE_IMPLEMENTACION/exec';
+
+    let catalogoOficinas = [];
+    let html5QrCode = null;
+    let cameraActive = false;
+
+    // 1. Cargar el catálogo de oficinas al abrir la web
+    window.addEventListener('DOMContentLoaded', async () => {
+      const select = document.getElementById('selectOficina');
+      try {
+        const response = await fetch(SCRIPT_URL);
+        const data = await response.json();
+
+        if (data.exito && data.oficinas) {
+          catalogoOficinas = data.oficinas;
+          select.innerHTML = '<option value="" selected disabled>Seleccione una oficina...</option>';
+          
+          if (catalogoOficinas.length === 0) {
+            select.innerHTML = '<option value="" disabled>No hay oficinas registradas en la hoja "Oficinas"</option>';
+            return;
+          }
+
+          catalogoOficinas.forEach((item, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            opt.textContent = item.oficina;
+            select.appendChild(opt);
+          });
+        } else {
+          select.innerHTML = '<option value="" disabled>Error al leer oficinas</option>';
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        select.innerHTML = '<option value="" disabled>Error de conexión con Google Sheets</option>';
+      }
+    });
+
+    // 2. Autocompletar campos al elegir oficina
+    function alCambiarOficina() {
+      const idx = document.getElementById('selectOficina').value;
+      if (idx !== "" && catalogoOficinas[idx]) {
+        const sel = catalogoOficinas[idx];
+        document.getElementById('responsable').value = sel.responsable || '';
+        document.getElementById('correo').value = sel.correo || '';
+        document.getElementById('anexo').value = sel.anexo || '';
+      }
+    }
+
+    // 3. Control de Cámara en Vivo (Sin bloqueo de iframe)
+    function toggleCamera() {
+      const readerDiv = document.getElementById('reader');
+      
+      if (!cameraActive) {
+        readerDiv.style.display = 'block';
+        if (!html5QrCode) {
+          html5QrCode = new Html5Qrcode("reader");
+        }
+        
+        const config = { 
+          fps: 15, 
+          qrbox: { width: 260, height: 150 },
+          aspectRatio: 1.333334
+        };
+
+        html5QrCode.start(
+          { facingMode: "environment" },
+          config,
+          (decodedText) => {
+            // Al detectar el código de barras
+            document.getElementById('patrimonio').value = decodedText;
+            if (navigator.vibrate) navigator.vibrate(100); // Vibración corta de confirmación en móvil
+            detenerCamara();
+            document.getElementById('descripcion').focus();
+          },
+          () => {}
+        ).then(() => {
+          cameraActive = true;
+          const btn = document.getElementById('btnToggleCam');
+          btn.className = 'btn btn-danger mb-2';
+          btn.textContent = '⏹ Detener Cámara';
+        }).catch(err => {
+          readerDiv.style.display = 'none';
+          alert("No se pudo iniciar la cámara: " + err);
+        });
+      } else {
+        detenerCamara();
+      }
+    }
+
+    function detenerCamara() {
+      if (html5QrCode && cameraActive) {
+        html5QrCode.stop().then(() => {
+          document.getElementById('reader').style.display = 'none';
+          cameraActive = false;
+          const btn = document.getElementById('btnToggleCam');
+          btn.className = 'btn btn-outline-primary mb-2';
+          btn.textContent = '📷 Activar Cámara en Vivo';
+        }).catch(err => console.error(err));
+      }
+    }
+
+    // 4. Enviar datos a Google Sheets mediante fetch POST
+    async function guardarRegistro(event) {
+      event.preventDefault();
+      
+      const idx = document.getElementById('selectOficina').value;
+      if (idx === "") {
+        alert("Por favor seleccione una oficina.");
+        return;
+      }
+
+      const btn = document.getElementById('btnSubmit');
+      const alerta = document.getElementById('alerta');
+
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      alerta.className = 'alert mt-4 d-none';
+
+      const payload = {
+        patrimonio: document.getElementById('patrimonio').value,
+        descripcion: document.getElementById('descripcion').value,
+        oficina: catalogoOficinas[idx].oficina,
+        ubicacion: document.getElementById('ubicacion').value,
+        responsable: document.getElementById('responsable').value,
+        correo: document.getElementById('correo').value,
+        anexo: document.getElementById('anexo').value
+      };
+
+      try {
+        // Se envía con Content-Type text/plain para evitar preflight OPTIONS bloqueado por Google
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        const res = await response.json();
+
+        if (res.exito) {
+          alerta.className = 'alert alert-success mt-4';
+          alerta.textContent = res.mensaje;
+          
+          // Limpiar solo los campos del equipo para continuar escaneando en la misma oficina
+          document.getElementById('patrimonio').value = '';
+          document.getElementById('descripcion').value = '';
+          document.getElementById('ubicacion').value = '';
+          document.getElementById('patrimonio').focus();
+        } else {
+          alerta.className = 'alert alert-danger mt-4';
+          alerta.textContent = res.mensaje;
+        }
+      } catch (err) {
+        alerta.className = 'alert alert-danger mt-4';
+        alerta.textContent = 'Error de red al guardar: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Registrar Equipo';
+      }
+    }
+  </script>
+</body>
+</html>
