@@ -243,14 +243,12 @@
       btn.textContent = 'Guardando...';
       alerta.className = 'alert mt-4 d-none';
 
+      // Solo enviamos los atributos propios de la entidad Equipo + la FK (oficina)
       const payload = {
         patrimonio: document.getElementById('patrimonio').value,
         descripcion: document.getElementById('descripcion').value,
-        oficina: catalogoOficinas[idx].oficina,
-        ubicacion: document.getElementById('ubicacion').value,
-        responsable: document.getElementById('responsable').value,
-        correo: document.getElementById('correo').value,
-        anexo: document.getElementById('anexo').value
+        oficina: catalogoOficinas[idx].oficina, // Llave Foránea (FK)
+        ubicacion: document.getElementById('ubicacion').value
       };
 
       try {
