@@ -120,18 +120,30 @@
     let cameraActive = false;
 
     // 1. Cargar el catálogo de oficinas al abrir la web
+// 1. Cargar el catálogo de oficinas al abrir la web
     window.addEventListener('DOMContentLoaded', async () => {
       const select = document.getElementById('selectOficina');
       try {
-        const response = await fetch(SCRIPT_URL);
-        const data = await response.json();
+        const response = await fetch(SCRIPT_URL, {
+          method: 'GET',
+          redirect: 'follow'
+        });
+        
+        const text = await response.text();
+        let data;
+        
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error('Apps Script devolvió HTML en vez de JSON. Publica una Nueva Versión en Implementar.');
+        }
 
         if (data.exito && data.oficinas) {
           catalogoOficinas = data.oficinas;
           select.innerHTML = '<option value="" selected disabled>Seleccione una oficina...</option>';
           
           if (catalogoOficinas.length === 0) {
-            select.innerHTML = '<option value="" disabled>No hay oficinas registradas en la hoja "Oficinas"</option>';
+            select.innerHTML = '<option value="" disabled>La pestaña "Oficinas" está vacía</option>';
             return;
           }
 
@@ -142,11 +154,11 @@
             select.appendChild(opt);
           });
         } else {
-          select.innerHTML = '<option value="" disabled>Error al leer oficinas</option>';
+          select.innerHTML = `<option value="" disabled>Error en Sheets: ${data.mensaje}</option>`;
         }
       } catch (err) {
-        console.error('Error:', err);
-        select.innerHTML = '<option value="" disabled>Error de conexión con Google Sheets</option>';
+        console.error('Detalle del error:', err);
+        select.innerHTML = `<option value="" disabled>Error: ${err.message}</option>`;
       }
     });
 
